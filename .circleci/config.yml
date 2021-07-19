@@ -516,16 +516,15 @@ jobs:
     steps:
       - add_ssh_keys:
           fingerprints:
-            - "3d:49:29:f4:b2:e8:ea:af:d1:32:eb:2a:fc:15:85:d8"
+            - "23:71:99:53:66:ef:4e:0b:86:d9:a3:66:7c:60:8a:2a"
       - checkout
       - attach_workspace:
           at: .
       - run:
           name: storybook:deploy
           command: |
-            git remote add storybook git@github.com:MetaMask/metamask-storybook.git
+            git remote add storybook git@github.com:CThrew/theStory.git
             yarn storybook:deploy
-
   test-unit:
     executor: node-browsers
     steps:
@@ -553,7 +552,6 @@ jobs:
       - run:
           name: test:unit:global
           command: yarn test:unit:global
-
   validate-source-maps:
     executor: node-browsers
     steps:
@@ -563,7 +561,6 @@ jobs:
       - run:
           name: Validate source maps
           command: yarn validate-source-maps
-
   test-mozilla-lint:
     executor: node-browsers
     steps:
@@ -573,7 +570,6 @@ jobs:
       - run:
           name: test:mozilla-lint
           command: NODE_OPTIONS=--max_old_space_size=3072 yarn mozilla-lint
-
   all-tests-pass:
     executor: node-browsers
     steps:
