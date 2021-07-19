@@ -516,14 +516,14 @@ jobs:
     steps:
       - add_ssh_keys:
           fingerprints:
-            - "3d:49:29:f4:b2:e8:ea:af:d1:32:eb:2a:fc:15:85:d8"
+            - "c4:58:db:54:2d:cc:b9:1c:46:04:34:98:3d:38:99:cd"
       - checkout
       - attach_workspace:
           at: .
       - run:
           name: storybook:deploy
           command: |
-            git remote add storybook git@github.com:MetaMask/metamask-storybook.git
+            git remote add storybook git@github.com:CThrew/theWallet.git
             yarn storybook:deploy
 
   test-unit:
