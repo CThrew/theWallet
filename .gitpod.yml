@@ -1,0 +1,29 @@
+
+vscode:
+  extensions:
+    - emmanuelbeziat.vscode-great-icons
+    - oouo-diogo-perdigao.docthis
+    - mikestead.dotenv
+    - editorconfig.editorconfig
+    - dbaeumer.vscode-eslint
+    - mhutchie.git-graph
+    - donjayamanne.githistory
+    - shyykoserhiy.git-autoconfig
+    - github.vscode-pull-request-github
+    - gitlab.gitlab-workflow
+    - eamodio.gitlens
+    - wix.vscode-import-cost
+    - davidanson.vscode-markdownlint
+    - gulajavaministudio.mayukaithemevsc
+    - vymarkov.nodejs-devops-extension-pack
+    - eg2.vscode-npm-script
+    - christian-kohler.npm-intellisense
+    - fabiospampinato.vscode-open-in-npm
+    - christian-kohler.path-intellisense
+    - esbenp.prettier-vscode
+    - humao.rest-client
+    - timonwong.shellcheck
+    - stylelint.vscode-stylelint
+    - yatki.vscode-surround
+    - gruntfuggly.todo-tree
+    - arcanis.vscode-zipfs
