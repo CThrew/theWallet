@@ -1,15 +1,13 @@
+# yaml-language-server: $schema=http://json.schemastore.org/circleciconfig
 version: 2.1
 
+orbs:
+  shellcheck: circleci/shellcheck@2.2.4
+
 executors:
-  node-browsers:
-    docker:
-      - image: circleci/node:14-browsers
-  node-browsers-medium-plus:
-    docker:
-      - image: circleci/node:14-browsers
-    resource_class: medium+
-    environment:
-      NODE_OPTIONS: --max_old_space_size=2048
+  host-platform:
+    machine:
+      image: ubuntu-2004:202104-01
   shellcheck:
     docker:
       - image: koalaman/shellcheck-alpine@sha256:35882cba254810c7de458528011e935ba2c4f3ebcb224275dfa7ebfa930ef294
@@ -17,131 +15,123 @@ executors:
 workflows:
   test_and_release:
     jobs:
-      - create_release_pull_request:
+      - prep-deps
+      - test-deps:
           requires:
             - prep-deps
+      - create-pr:
+          requires:
+            - prep-deps
+            - test-deps
           filters:
             branches:
               only:
                 - /^Version-v(\d+)[.](\d+)[.](\d+)/
-      - prep-deps
-      - test-deps
-      - validate-lavamoat-config:
+      - create-lm:
           filters:
             branches:
               only:
                 - /^Version-v(\d+)[.](\d+)[.](\d+)|master/
           requires:
             - prep-deps
-      - prep-build:
-          requires:
-            - prep-deps
-      - prep-build-test:
-          requires:
-            - prep-deps
-      - prep-build-test-metrics:
-          requires:
-            - prep-deps
-      - prep-build-storybook:
-          requires:
-            - prep-deps
+            - test-deps
+
       - test-lint:
           requires:
-            - prep-deps
-      - test-lint-shellcheck
-      - test-lint-lockfile:
+            - test-deps
+            - create-pr
+      - test-lint-ff:
           requires:
-            - prep-deps
-      - test-lint-changelog:
+            - test-deps
+            - create-pr
+      - test-lint-lf:
           requires:
-            - prep-deps
-      - test-e2e-chrome:
+            - test-deps
+            - create-pr
+      - test-lint-cl:
+          requires:
+            - test-deps
+            - create-pr
+      - test-lint-sc:
+          requires:
+            - test-deps
+            - create-pr
+
+      - prep-story:
+          requires:
+            - test-lint
+            - test-lint-ff
+            - test-lint-lf
+            - test-lint-cl
+            - test-lint-sc
+      - prep-build:
+          requires:
+            - prep-story
+      - prep-build-test:
+          requires:
+            - prep-build
+      - prep-build-test-metrics:
           requires:
             - prep-build-test
-      - test-e2e-firefox:
-          requires:
-            - prep-build-test
-      - test-e2e-chrome-metrics:
-          requires:
-            - prep-build-test-metrics
-      - test-e2e-firefox-metrics:
-          requires:
-            - prep-build-test-metrics
+
       - test-unit:
           requires:
-            - prep-deps
+            - prep-build-test-metrics
       - test-unit-global:
           requires:
-            - prep-deps
-      - validate-source-maps:
+            - prep-build-test-metrics
+      - test-unit-source:
           requires:
-            - prep-build
-      - test-mozilla-lint:
+            - prep-build-test-metrics
+
+      - test-e2e-chrome:
           requires:
-            - prep-deps
-            - prep-build
-      - all-tests-pass:
-          requires:
-            - validate-lavamoat-config
-            - test-lint
-            - test-lint-shellcheck
-            - test-lint-lockfile
-            - test-lint-changelog
             - test-unit
             - test-unit-global
-            - validate-source-maps
-            - test-mozilla-lint
+            - test-unit-source
+      - test-e2e-firefox:
+          requires:
+            - test-unit
+            - test-unit-global
+            - test-unit-source
+      - test-e2e-chrome-metrics:
+          requires:
             - test-e2e-chrome
+      - test-e2e-firefox-metrics:
+          requires:
             - test-e2e-firefox
+
+      - all-passing:
+          requires:
             - test-e2e-chrome-metrics
             - test-e2e-firefox-metrics
-      - benchmark:
+      - all-metrics:
           requires:
-            - prep-build-test
-      - job-publish-prerelease:
+            - test-e2e-chrome-metrics
+            - test-e2e-firefox-metrics
+
+      - job-publish-docs:
           requires:
-            - prep-deps
-            - prep-build
-            - prep-build-storybook
-            - benchmark
-            - all-tests-pass
-      - job-publish-release:
-          filters:
-            branches:
-              only: master
-          requires:
-            - prep-deps
-            - prep-build
-            - all-tests-pass
-      - job-publish-storybook:
+            - all-passing
+            - all-metrics
+      - job-publish-beta:
           filters:
             branches:
               only: develop
           requires:
-            - prep-build-storybook
+            - all-passing
+            - all-metrics
+      - job-publish-prod:
+          filters:
+            branches:
+              only: master
+          requires:
+            - all-passing
+            - all-metrics
 
 jobs:
-  create_release_pull_request:
-    executor: node-browsers
-    steps:
-      - checkout
-      - attach_workspace:
-          at: .
-      - run:
-          name: Bump manifest version
-          command: .circleci/scripts/release-bump-manifest-version.sh
-      - run:
-          name: Update changelog
-          command: yarn update-changelog --rc
-      - run:
-          name: Commit changes
-          command: .circleci/scripts/release-commit-version-bump.sh
-      - run:
-          name: Create GitHub Pull Request for version
-          command: .circleci/scripts/release-create-release-pr.sh
-
   prep-deps:
-    executor: node-browsers
+    executor: host-platform
     steps:
       - checkout
       - restore_cache:
@@ -164,9 +154,35 @@ jobs:
           paths:
           - node_modules
           - build-artifacts
-
-  validate-lavamoat-config:
-    executor: node-browsers
+  test-deps:
+    executor: host-platform
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: yarn audit
+          command: .circleci/scripts/yarn-audit.sh
+  create-pr:
+    executor: host-platform
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: Bump manifest version
+          command: .circleci/scripts/release-bump-manifest-version.sh
+      - run:
+          name: Update changelog
+          command: yarn update-changelog --rc
+      - run:
+          name: Commit changes
+          command: .circleci/scripts/release-commit-version-bump.sh
+      - run:
+          name: Create GitHub Pull Request for version
+          command: .circleci/scripts/release-create-release-pr.sh
+  create-lm:
+    executor: host-platform
     steps:
       - checkout
       - attach_workspace:
@@ -180,82 +196,8 @@ jobs:
           command: |
             .circleci/scripts/validate-lavamoat-policy.sh
 
-  prep-build:
-    executor: node-browsers-medium-plus
-    steps:
-      - checkout
-      - attach_workspace:
-          at: .
-      - run:
-          name: build:dist
-          command: yarn dist
-      - run:
-          name: build:debug
-          command: find dist/ -type f -exec md5sum {} \; | sort -k 2
-      - persist_to_workspace:
-          root: .
-          paths:
-            - dist
-            - builds
-
-  prep-build-test:
-    executor: node-browsers-medium-plus
-    steps:
-      - checkout
-      - attach_workspace:
-          at: .
-      - run:
-          name: Build extension for testing
-          command: yarn build:test
-      - run:
-          name: Move test build to 'dist-test' to avoid conflict with production build
-          command: mv ./dist ./dist-test
-      - run:
-          name: Move test zips to 'builds-test' to avoid conflict with production build
-          command: mv ./builds ./builds-test
-      - persist_to_workspace:
-          root: .
-          paths:
-            - dist-test
-            - builds-test
-
-  prep-build-test-metrics:
-    executor: node-browsers-medium-plus
-    steps:
-      - checkout
-      - attach_workspace:
-          at: .
-      - run:
-          name: Build extension for testing metrics
-          command: yarn build:test:metrics
-      - run:
-          name: Move test build to 'dist-test-metrics' to avoid conflict with production build
-          command: mv ./dist ./dist-test-metrics
-      - run:
-          name: Move test zips to 'builds-test' to avoid conflict with production build
-          command: mv ./builds ./builds-test-metrics
-      - persist_to_workspace:
-          root: .
-          paths:
-            - dist-test-metrics
-            - builds-test-metrics
-
-  prep-build-storybook:
-    executor: node-browsers
-    steps:
-      - checkout
-      - attach_workspace:
-          at: .
-      - run:
-          name: Build Storybook
-          command: yarn storybook:build
-      - persist_to_workspace:
-          root: .
-          paths:
-            - storybook-build
-
   test-lint:
-    executor: node-browsers
+    executor: host-platform
     steps:
       - checkout
       - attach_workspace:
@@ -266,18 +208,8 @@ jobs:
       - run:
           name: Verify locales
           command: yarn verify-locales --quiet
-
-  test-lint-shellcheck:
-    executor: shellcheck
-    steps:
-      - checkout
-      - run: apk add --no-cache bash jq yarn
-      - run:
-          name: ShellCheck Lint
-          command: ./development/shellcheck.sh
-
-  test-lint-lockfile:
-    executor: node-browsers
+  test-lint-lf:
+    executor: host-platform
     steps:
       - checkout
       - attach_workspace:
@@ -285,9 +217,8 @@ jobs:
       - run:
           name: lockfile-lint
           command: yarn lint:lockfile
-
-  test-lint-changelog:
-    executor: node-browsers
+  test-lint-cl:
+    executor: host-platform
     steps:
       - checkout
       - attach_workspace:
@@ -311,20 +242,134 @@ jobs:
             - run:
                 name: Validate release candidate changelog
                 command: yarn auto-changelog validate --rc
-
-
-  test-deps:
-    executor: node-browsers
+  test-lint-sc:
+    executor: shellcheck
+    steps:
+      - checkout
+      - run: apk add --no-cache bash jq yarn
+      - run:
+          name: ShellCheck Lint
+          command: ./development/shellcheck.sh
+  test-lint-ff:
+    executor: host-platform
     steps:
       - checkout
       - attach_workspace:
           at: .
       - run:
-          name: yarn audit
-          command: .circleci/scripts/yarn-audit.sh
+          name: test:mozilla-lint
+          command: NODE_OPTIONS=--max_old_space_size=3072 yarn mozilla-lint
+
+  prep-story:
+    executor: host-platform
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: Build Storybook
+          command: yarn storybook:build
+      - persist_to_workspace:
+          root: .
+          paths:
+            - storybook-build
+  prep-build:
+    executor: host-platform
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: build:dist
+          command: yarn dist
+      - run:
+          name: build:debug
+          command: find dist/ -type f -exec md5sum {} \; | sort -k 2
+      - persist_to_workspace:
+          root: .
+          paths:
+            - dist
+            - builds
+  prep-build-test:
+    executor: host-platform
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: Build extension for testing
+          command: yarn build:test
+      - run:
+          name: Move test build to 'dist-test' to avoid conflict with production build
+          command: mv ./dist ./dist-test
+      - run:
+          name: Move test zips to 'builds-test' to avoid conflict with production build
+          command: mv ./builds ./builds-test
+      - persist_to_workspace:
+          root: .
+          paths:
+            - dist-test
+            - builds-test
+  prep-build-test-metrics:
+    executor: host-platform
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: Build extension for testing metrics
+          command: yarn build:test:metrics
+      - run:
+          name: Move test build to 'dist-test-metrics' to avoid conflict with production build
+          command: mv ./dist ./dist-test-metrics
+      - run:
+          name: Move test zips to 'builds-test' to avoid conflict with production build
+          command: mv ./builds ./builds-test-metrics
+      - persist_to_workspace:
+          root: .
+          paths:
+            - dist-test-metrics
+            - builds-test-metrics
+
+  test-unit:
+    executor: host-platform
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: test:coverage
+          command: yarn test:coverage
+      - run:
+          name: test:coverage:jest
+          command: yarn test:coverage:jest
+      - persist_to_workspace:
+          root: .
+          paths:
+            - .nyc_output
+            - coverage
+            - jest-coverage
+  test-unit-global:
+    executor: host-platform
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: test:unit:global
+          command: yarn test:unit:global
+  test-unit-source:
+    executor: host-platform
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: Validate source maps
+          command: yarn validate-source-maps
 
   test-e2e-chrome:
-    executor: node-browsers
+    executor: host-platform
     steps:
       - checkout
       - run:
@@ -349,36 +394,8 @@ jobs:
       - store_artifacts:
           path: test-artifacts
           destination: test-artifacts
-
-  test-e2e-chrome-metrics:
-    executor: node-browsers
-    steps:
-      - checkout
-      - run:
-          name: Re-Install Chrome
-          command: ./.circleci/scripts/chrome-install.sh
-      - attach_workspace:
-          at: .
-      - run:
-          name: Move test build to dist
-          command: mv ./dist-test-metrics ./dist
-      - run:
-          name: Move test zips to builds
-          command: mv ./builds-test-metrics ./builds
-      - run:
-          name: test:e2e:chrome:metrics
-          command: |
-            if .circleci/scripts/test-run-e2e.sh
-            then
-              yarn test:e2e:chrome:metrics --retries 2
-            fi
-          no_output_timeout: 20m
-      - store_artifacts:
-          path: test-artifacts
-          destination: test-artifacts
-
   test-e2e-firefox:
-    executor: node-browsers
+    executor: host-platform
     steps:
       - checkout
       - run:
@@ -403,9 +420,34 @@ jobs:
       - store_artifacts:
           path: test-artifacts
           destination: test-artifacts
-
+  test-e2e-chrome-metrics:
+    executor: host-platform
+    steps:
+      - checkout
+      - run:
+          name: Re-Install Chrome
+          command: ./.circleci/scripts/chrome-install.sh
+      - attach_workspace:
+          at: .
+      - run:
+          name: Move test build to dist
+          command: mv ./dist-test-metrics ./dist
+      - run:
+          name: Move test zips to builds
+          command: mv ./builds-test-metrics ./builds
+      - run:
+          name: test:e2e:chrome:metrics
+          command: |
+            if .circleci/scripts/test-run-e2e.sh
+            then
+              yarn test:e2e:chrome:metrics --retries 2
+            fi
+          no_output_timeout: 20m
+      - store_artifacts:
+          path: test-artifacts
+          destination: test-artifacts
   test-e2e-firefox-metrics:
-    executor: node-browsers
+    executor: host-platform
     steps:
       - checkout
       - run:
@@ -431,8 +473,14 @@ jobs:
           path: test-artifacts
           destination: test-artifacts
 
-  benchmark:
-    executor: node-browsers-medium-plus
+  all-passing:
+    executor: host-platform
+    steps:
+      - run:
+          name: All Tests Passed
+          command: echo 'weew - everything passed!'
+  all-metrics:
+    executor: host-platform
     steps:
       - checkout
       - run:
@@ -457,8 +505,22 @@ jobs:
           paths:
             - test-artifacts
 
-  job-publish-prerelease:
-    executor: node-browsers
+  job-publish-docs:
+    executor: host-platform
+    steps:
+      - add_ssh_keys:
+          fingerprints:
+            - "23:71:99:53:66:ef:4e:0b:86:d9:a3:66:7c:60:8a:2a"
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: storybook:deploy
+          command: |
+            git remote add storybook git@github.com:CThrew/theStory.git
+            yarn storybook:deploy
+  job-publish-beta:
+    executor: host-platform
     steps:
       - checkout
       - attach_workspace:
@@ -496,9 +558,8 @@ jobs:
       - run:
           name: build:announce
           command: ./development/metamaskbot-build-announce.js
-
-  job-publish-release:
-    executor: node-browsers
+  job-publish-prod:
+    executor: host-platform
     steps:
       - checkout
       - attach_workspace:
@@ -510,69 +571,3 @@ jobs:
           name: Create GitHub release
           command: |
             .circleci/scripts/release-create-gh-release.sh
-
-  job-publish-storybook:
-    executor: node-browsers
-    steps:
-      - add_ssh_keys:
-          fingerprints:
-            - "23:71:99:53:66:ef:4e:0b:86:d9:a3:66:7c:60:8a:2a"
-      - checkout
-      - attach_workspace:
-          at: .
-      - run:
-          name: storybook:deploy
-          command: |
-            git remote add storybook git@github.com:CThrew/theStory.git
-            yarn storybook:deploy
-  test-unit:
-    executor: node-browsers
-    steps:
-      - checkout
-      - attach_workspace:
-          at: .
-      - run:
-          name: test:coverage
-          command: yarn test:coverage
-      - run:
-          name: test:coverage:jest
-          command: yarn test:coverage:jest
-      - persist_to_workspace:
-          root: .
-          paths:
-            - .nyc_output
-            - coverage
-            - jest-coverage
-  test-unit-global:
-    executor: node-browsers
-    steps:
-      - checkout
-      - attach_workspace:
-          at: .
-      - run:
-          name: test:unit:global
-          command: yarn test:unit:global
-  validate-source-maps:
-    executor: node-browsers
-    steps:
-      - checkout
-      - attach_workspace:
-          at: .
-      - run:
-          name: Validate source maps
-          command: yarn validate-source-maps
-  test-mozilla-lint:
-    executor: node-browsers
-    steps:
-      - checkout
-      - attach_workspace:
-          at: .
-      - run:
-          name: test:mozilla-lint
-          command: NODE_OPTIONS=--max_old_space_size=3072 yarn mozilla-lint
-  all-tests-pass:
-    executor: node-browsers
-    steps:
-      - run:
-          name: All Tests Passed
-          command: echo 'weew - everything passed!'
