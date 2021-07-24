@@ -1082,6 +1082,11 @@ const slice = createSlice({
           });
         }
       })
+      .addCase(computeEstimatedGasLimit.rejected, (state) => {
+        // If gas estimation fails, we should set the loading state to false,
+        // because it is no longer loading
+        state.gas.isGasEstimateLoading = false;
+      })
       .addCase(GAS_FEE_ESTIMATES_UPDATED, (state, action) => {
         // When the gasFeeController updates its gas fee estimates we need to
         // update and validate state based on those new values
@@ -1159,9 +1164,7 @@ export function updateSendAmount(amount) {
     if (state.send.amount.mode === AMOUNT_MODES.MAX) {
       await dispatch(actions.updateAmountMode(AMOUNT_MODES.INPUT));
     }
-    if (state.send.asset.type === ASSET_TYPES.TOKEN) {
-      await dispatch(computeEstimatedGasLimit());
-    }
+    await dispatch(computeEstimatedGasLimit());
   };
 }
 
@@ -1321,6 +1324,7 @@ export function toggleSendMaxMode() {
       await dispatch(actions.updateAmountMode(AMOUNT_MODES.MAX));
       await dispatch(actions.updateAmountToMax());
     }
+    await dispatch(computeEstimatedGasLimit());
   };
 }
 

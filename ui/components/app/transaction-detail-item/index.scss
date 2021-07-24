@@ -31,4 +31,12 @@
   &__subtitle {
     flex-grow: 1;
   }
+
+  &__subtext {
+    text-align: end;
+  }
+
+  .currency-display-component {
+    display: inline;
+  }
 }
